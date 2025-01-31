@@ -9,8 +9,6 @@ use crate::error::ErrorCode;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, InitializeMint, MintTo, spl_token, Burn};
 
 
-
-
 pub fn resolve_market(ctx: Context<ResolveMarket>) -> Result<()> {
     msg!("Resolving market...");
     let market = &mut ctx.accounts.market;
