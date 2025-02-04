@@ -30,8 +30,22 @@ pub mod binary_options {
     pub fn initialize_treasury(ctx: Context<InitializeTreasury>) -> Result<()> {
         instructions::initialize_treasury(ctx)
     }
-    pub fn create_outcome_tokens(ctx: Context<CreateOutcomeTokens>) -> Result<()>{
-        instructions::create_outcome_tokens(ctx)
+    // pub fn create_outcome_tokens<'info>(ctx: Context<'_, '_, '_, 'info, CreateOutcomeTokens<'info>>) -> Result<()>{
+    //     instructions::create_outcome_tokens(ctx)
+    // }
+
+    pub fn initialize_outcome_mints(ctx: Context<InitializeOutcomeMints>)->Result<()>{
+        instructions::initialize_outcome_mints(ctx)
+    }
+    pub fn mint_outcome_tokens(ctx: Context<MintOutcomeTokens>)->Result<()>{
+        instructions::mint_outcome_tokens(ctx)
+    }
+    pub fn initialize_treasury_token_accounts(ctx: Context<InitializeTreasuryTokenAccounts>)->Result<()>{
+        instructions::initialize_treasury_token_accounts(ctx)
+    }
+
+    pub fn lock_funds(ctx: Context<LockFunds>, amount: u64)->Result<()>{
+        instructions::lock_funds(ctx, amount)
     }
 
     pub fn get_price_feed(ctx: Context<GetPriceFeed>, feed_id_str: String) -> Result<f64> {
@@ -48,7 +62,6 @@ pub mod binary_options {
             
         }
     }
-
 
     pub fn fetch_btc_price(ctx: Context<FetchCoinPrice>) -> Result<f64> {
         instructions::fetch_btc_price(&ctx.accounts.price_update)

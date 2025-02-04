@@ -24,5 +24,14 @@ pub enum ErrorCode {
     #[msg("Invalid token mint")]
     InvalidTokenMint,
     #[msg("Market outcome isn't resolved yet")]
-    InvalidMarketOutcome
+    InvalidMarketOutcome,
+    #[msg("Market already expired")]
+    MarketAlreadyExpired,
+    #[msg("Invalid account")]
+    InvalidAccount,
+    #[msg("Invalid treasury token account")]
+    InvalidTreasuryTokenAccount,
+    #[msg("Invalid mint account")]
+    InvalidMintAccount,
+        
 }
