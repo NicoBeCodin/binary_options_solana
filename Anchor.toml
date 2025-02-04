@@ -5,10 +5,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-test_folder = "2KHn6xJksJk9HEpctAU4BWMVvXJrZXduSgJaSgamZhrK"
+binary_options_sol = "2KHn6xJksJk9HEpctAU4BWMVvXJrZXduSgJaSgamZhrK"
 
 [programs.devnet]
-test_folder = "2KHn6xJksJk9HEpctAU4BWMVvXJrZXduSgJaSgamZhrK"
+binary_options_sol = "2KHn6xJksJk9HEpctAU4BWMVvXJrZXduSgJaSgamZhrK"
 
 
 [registry]

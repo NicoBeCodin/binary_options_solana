@@ -1,8 +1,8 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { TestFolder } from "../target/types/test_folder";
+import { TestFolder } from "../target/types/binary_options_sol";
 
-describe("test_folder", () => {
+describe("binary_options_sol", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
 
