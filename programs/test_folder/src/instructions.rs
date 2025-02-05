@@ -1,5 +1,4 @@
-use std::num::TryFromIntError;
-use std::str::FromStr;
+
 
 use anchor_lang::{ prelude::*, solana_program::program::invoke_signed, solana_program::system_instruction };
 // use SolanaPriceAccount::account_to_feed;
@@ -9,17 +8,16 @@ use crate::state::*;
 use crate::error::ErrorCode;
 use anchor_spl::token::{
     self,
-    Mint,
-    Token,
-    TokenAccount,
-    InitializeMint,
     MintTo,
     spl_token,
     Burn,
     Transfer,
-    mint_to
 };
-// use spl_token::instruction::mint_to;
+
+use mpl_token_metadata::programs::MPL_TOKEN_METADATA_ID;
+use mpl_token_metadata::instructions::CreateMetadataAccountV3;
+use mpl_token_metadata::types::DataV2;
+
 
 
 
@@ -76,64 +74,68 @@ pub fn resolve_market(ctx: Context<ResolveMarket>) -> Result<()> {
 
 const ADMIN_KEY: &str = "EJZQiTeikeg8zgU7YgRfwZCxc9GdhTsYR3fQrXv3uK9V";
 
-
-
 pub fn lock_funds(ctx: Context<LockFunds>, amount: u64) -> Result<()> {
-    const LOCK_AMOUNT_PER_TOKEN: u64 = 100_000;
-    let payment = amount * LOCK_AMOUNT_PER_TOKEN;
-    let authority = &ctx.accounts.authority;
-    // ✅ Transfer lamports from user to treasury (locking funds)
-    anchor_lang::solana_program::program::invoke(
-        &anchor_lang::solana_program::system_instruction::transfer(
+    let lamports_per_token_pair = 100_000;
+    let lamports_to_lock = amount * lamports_per_token_pair;
+
+    let market_key = ctx.accounts.market.key();
+    let market_seeds = &[
+        b"market",
+        ctx.accounts.market.authority.as_ref(),
+        &ctx.accounts.market.strike.to_le_bytes(),
+        &ctx.accounts.market.expiry.to_le_bytes(),
+        &[ctx.bumps.market],
+    ];
+    let signer_seeds = &[&market_seeds[..]];
+
+    // ✅ Use invoke_signed to transfer lamports
+    invoke_signed(
+        &system_instruction::transfer(
             &ctx.accounts.user.key(),
-            &ctx.accounts.treasury.key(),
-            payment
+            &ctx.accounts.market.key(),
+            lamports_to_lock,
         ),
         &[
             ctx.accounts.user.to_account_info(),
-            ctx.accounts.treasury.to_account_info(),
+            ctx.accounts.market.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
-        ]
+        ],
+        signer_seeds, // ✅ Sign the transaction with the market PDA seeds
     )?;
 
-    msg!("{} lamports locked in the treasury!", payment);
-
-    // ✅ Transfer 1 YES token from Treasury to the User
-    let yes_transfer = Transfer {
-        from: ctx.accounts.treasury_yes_token_account.to_account_info(),
-        to: ctx.accounts.user_yes_token_account.to_account_info(),
-        authority: ctx.accounts.treasury.to_account_info(),
-    };
-    let bump = ctx.bumps.treasury;
-    let binding = authority.key();
-    let treasury_seeds: &[&[u8]] = &[b"treasury".as_ref(), &binding.as_ref(), &[bump]];
-    let signature_seeds = [treasury_seeds];
-    let cpi_ctx = CpiContext::new_with_signer(
-        ctx.accounts.token_program.to_account_info(),
-        yes_transfer,
-        &signature_seeds
+    msg!(
+        "User locked {} lamports and received {} YES and NO tokens each.",
+        lamports_to_lock,
+        amount
     );
-    token::transfer(cpi_ctx, amount)?;
 
-    msg!("{} YES token transferred to user!", amount);
-    
-    // ✅ Transfer 1 NO token from Treasury to the User
-    let no_transfer = Transfer {
-        from: ctx.accounts.treasury_no_token_account.to_account_info(),
-        to: ctx.accounts.user_no_token_account.to_account_info(),
-        authority: ctx.accounts.treasury.to_account_info(),
-    };
-    let cpi_ctx = CpiContext::new_with_signer(
+    // ✅ Transfer YES tokens
+    let yes_transfer_ctx = CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),
-        no_transfer,
-        &signature_seeds
+        Transfer {
+            from: ctx.accounts.treasury_yes_token_account.to_account_info(),
+            to: ctx.accounts.user_yes_token_account.to_account_info(),
+            authority: ctx.accounts.market.to_account_info(),
+        },
+        signer_seeds,
     );
-    token::transfer(cpi_ctx, amount)?;
-    
-    msg!("{} NO token transferred to user!", amount);
-    
+    token::transfer(yes_transfer_ctx, amount)?;
+
+    // ✅ Transfer NO tokens
+    let no_transfer_ctx = CpiContext::new_with_signer(
+        ctx.accounts.token_program.to_account_info(),
+        Transfer {
+            from: ctx.accounts.treasury_no_token_account.to_account_info(),
+            to: ctx.accounts.user_no_token_account.to_account_info(),
+            authority: ctx.accounts.market.to_account_info(),
+        },
+        signer_seeds,
+    );
+    token::transfer(no_transfer_ctx, amount)?;
+
     Ok(())
 }
+
 
 pub fn redeem(ctx: Context<Redeem>, amount: u64) -> Result<()> {
     let market = &ctx.accounts.market;
@@ -247,6 +249,78 @@ pub fn fetch_eth_price(price_account: &Account<PriceUpdateV2>) -> Result<f64> {
 }
 
 
+// fn create_token_metadata<'info>(
+//     token_metadata_program: &Program<'info, mpl_token_metadata_id>,
+//     mint: &Account<'info, Mint>,
+//     mint_authority: &Account<'info, Market>,
+//     payer: &Signer<'info>,
+//     name: String,
+//     symbol: String,
+//     uri: String,
+//     ctx: Context<'_, '_, '_, 'info, InitializeOutcomeMints<'info>>,
+// ) -> Result<()> {
+//     let _ = token_metadata_program;
+//     // Derive the metadata PDA
+//     let metadata_seeds = &[
+//         b"metadata",
+//         mpl_token_metadata::ID.as_ref(),
+//         mint.key().as_ref(),
+//     ];
+//     let (metadata_account, _bump) =
+//         Pubkey::find_program_address(metadata_seeds, &mpl_token_metadata::ID);
+
+//     // Define the metadata data structure
+//     let data = DataV2 {
+//         name,
+//         symbol,
+//         uri,
+//         seller_fee_basis_points: 0, // No seller fee
+//         creators: None,
+//         collection: None,
+//         uses: None,
+//     };
+
+//     // Create the instruction
+//     let ix = create_metadata_accounts_v3(
+//         mpl_token_metadata::ID,
+//         metadata_account,
+//         mint.key(),
+//         mint_authority.key(),
+//         payer.key(),
+//         mint_authority.key(),
+//         data,
+//         true,  // Update authority is signer
+//         true,  // Is mutable
+//         None,
+//         None,
+//         None,
+//     );
+
+//     // Invoke the instruction
+//     invoke_signed(
+//         &ix,
+//         &[
+//             ctx.accounts.token_metadata_program.to_account_info(),
+//             ctx.accounts.token_program.to_account_info(),
+//             ctx.accounts.system_program.to_account_info(),
+//             ctx.accounts.rent.to_account_info(),
+//             mint.to_account_info(),
+//             metadata_account.to_account_info(),
+//             mint_authority.to_account_info(),
+//             payer.to_account_info(),
+//         ],
+//         &[&[
+//             b"metadata",
+//             mpl_token_metadata::ID.as_ref(),
+//             mint.key().as_ref(),
+//             &[_bump],
+//         ]],
+//     )?;
+
+//     Ok(())
+// }
+
+
 pub fn initialize_treasury(ctx: Context<InitializeTreasury>) -> Result<()> {
     if ctx.accounts.authority.key.to_string() != ADMIN_KEY {
         return Err(ErrorCode::Unauthorized.into());
@@ -291,93 +365,6 @@ pub fn initialize_treasury_token_accounts(ctx: Context<InitializeTreasuryTokenAc
     msg!("✅ Treasury Token Accounts Initialized!");
     Ok(())
 }
-
-// pub fn initialize_treasury_token_accounts(ctx: Context<InitializeTreasuryTokenAccounts>) -> Result<()> {
-
-//     // Mint 500,000 YES tokens to the treasury YES token account    
-//     let market_key = &ctx.accounts.market.key();
-//     // let token_program = ctx.accounts.token_program;
-//     // let yes_mint = ctx.accounts.yes_mint;
-//     // let no_mint = ctx.accounts.no_mint;
-//     // let treasury_yes_token_account = ctx.accounts.treasury_yes_token_account;
-//     // let treasury_no_token_account = ctx.accounts.treasury_no_token_account;
-//     // let market = ctx.accounts.market;
-//     // let yes_mint_seeds = &[
-//     //     b"yes_mint",
-//     //     market_key.as_ref(),
-//     //     &[ctx.bumps.yes_mint],
-//     // ];
-//     // let yes_signer = &[&yes_mint_seeds[..]];
-
-//     let market_seeds = &[
-//         b"market",
-//      market_key.as_ref(),
-//      &ctx.accounts.market.strike.to_le_bytes(),
-//      &ctx.accounts.market.expiry.to_le_bytes(),
-//      &[ctx.bumps.market] 
-//       ];
-    
-//     let signer = &[&market_seeds[..]];
-
-//     // let yes_mint_ix = mint_to(
-//     //     token_program.key,
-//     //     yes_mint.key(),
-//     //     treasury_yes_token_account.key(),
-//     //     market.key(),
-//     //     &[],
-//     //     500_000,
-//     // )?;
-//     // invoke_signed(
-//     //     &yes_mint_ix,
-//     //     &[
-//     //         yes_mint.clone(),
-//     //         treasury_yes_token_account.clone(),
-//     //         market.clone(),
-//     //         token_program.clone(),
-//     //     ],
-//     //     signer_seeds,
-//     // )?;
-
-
-
-//     let cpi_ctx_yes = CpiContext::new_with_signer(
-//         ctx.accounts.token_program.to_account_info(),
-//         MintTo {
-//             mint: ctx.accounts.yes_mint.to_account_info(),
-//             to: ctx.accounts.treasury_yes_token_account.to_account_info(),
-//             authority: ctx.accounts.market.to_account_info(),
-//         },
-//         signer,
-//     );
-//     token::mint_to(cpi_ctx_yes, 500_000)?;
-
-//     msg!("Minted the yes tokens");
-
-//     // Mint 500,000 NO tokens to the treasury NO token account
-//     let no_mint_seeds = &[
-//         b"no_mint",
-//         market_key.as_ref(),
-//         &[ctx.bumps.no_mint],
-//     ];
-//     let no_signer = &[&no_mint_seeds[..]];
-//     let cpi_ctx_no = CpiContext::new_with_signer(
-//         ctx.accounts.token_program.to_account_info(),
-//         MintTo {
-//             mint: ctx.accounts.no_mint.to_account_info(),
-//             to: ctx.accounts.treasury_no_token_account.to_account_info(),
-//             authority: ctx.accounts.market.to_account_info(),
-//         },
-//         signer,
-//     );
-//     token::mint_to(cpi_ctx_no, 500_000)?;
-
-//     msg!("Minted the no tokens");
-
-//     msg!("✅ Treasury Token Accounts Initialized and 500,000 YES and NO tokens minted!");
-//     Ok(())
-// }
-
-
 
 #[inline(never)]
 pub fn mint_outcome_tokens(ctx: Context<MintOutcomeTokens>) -> Result<()> {
