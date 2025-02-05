@@ -5,10 +5,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-binary_options_sol = "2KHn6xJksJk9HEpctAU4BWMVvXJrZXduSgJaSgamZhrK"
+binary_options_sol = "ENeicYASniyR5oHnrp5pxq7UtUMLqmCJKqu5Er8ChNtP"
 
 [programs.devnet]
-binary_options_sol = "2KHn6xJksJk9HEpctAU4BWMVvXJrZXduSgJaSgamZhrK"
+binary_options_sol = "ENeicYASniyR5oHnrp5pxq7UtUMLqmCJKqu5Er8ChNtP"
 
 
 [registry]

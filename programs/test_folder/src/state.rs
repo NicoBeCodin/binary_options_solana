@@ -137,7 +137,7 @@ pub struct Redeem<'info> {
     pub treasury: AccountInfo<'info>,
 
     #[account(mut)]
-    ///CHECK : The authority that createdd the treasury
+    ///CHECK : The authority that created the treasury
     pub authority: AccountInfo<'info>,
 
     // YES Token Account Validation
@@ -292,91 +292,13 @@ pub struct InitializeTreasury<'info> {
 
 
 
-
-
-
-// #[derive(Accounts)]
-// pub struct CreateOutcomeTokens<'info> {
-//     #[account(mut)]
-//     pub market: Box<Account<'info, Market>>,
-
-//     #[account(
-//         mut,
-//         seeds = [b"treasury".as_ref(), authority.key().as_ref()],
-//         bump
-//     )]
-//     ///CHECK: This will be derived from the main treasury
-//     pub treasury: AccountInfo<'info>, // Treasury PDA
-    
-//     #[account(mut)]
-//     pub authority: Signer<'info>,
-
-//     #[account(
-//         init,
-//         payer = market,
-//         mint::decimals = 0,
-//         mint::authority = market,
-//         seeds = [b"yes_mint".as_ref(), market.key().as_ref()],
-//         bump
-//     )]
-//     pub yes_mint: Box<Account<'info, Mint>>,
-
-//     #[account(
-//         init,
-//         payer = market,
-//         mint::decimals = 0,
-//         mint::authority = market,
-//         seeds = [b"no_mint".as_ref(), market.key().as_ref()],
-//         bump
-//     )]
-//     pub no_mint: Box<Account<'info, Mint>>,
-
-//     #[account(
-//         init_if_needed,
-//         payer = market,
-//         associated_token::mint = yes_mint,
-//         associated_token::authority = treasury,
-//     )]
-//     pub treasury_yes_token_account: Box<Account<'info, TokenAccount>>,
-
-//     #[account(
-//         init_if_needed,
-//         payer = market,
-//         associated_token::mint = no_mint,
-//         associated_token::authority = treasury,
-//     )]
-//     pub treasury_no_token_account: Box<Account<'info, TokenAccount>>,
-
-//     pub system_program: Program<'info, System>,
-//     pub token_program: Program<'info, Token>,
-//     pub associated_token_program: Program<'info, AssociatedToken>,
-// }
-
-// #[derive(Accounts)]
-// pub struct CreateOutcomeTokens<'info> {
-//     #[account(mut)]
-//     pub market: Account<'info, Market>, // Kept as is, since we modify it
-
-//     #[account(mut)]
-//     pub authority: Signer<'info>,
-
-//     #[account(
-//         mut,
-//         seeds = [b"treasury".as_ref(), authority.key().as_ref()],
-//         bump
-//     )]
-//     ///CHECK: Will get it
-//     pub treasury: UncheckedAccount<'info>, // ✅ Now Unchecked (retrieved manually later)
-
-//     pub system_program: Program<'info, System>,
-//     pub token_program: Program<'info, Token>,
-//     pub associated_token_program: Program<'info, AssociatedToken>,
-// }
-
-
 #[derive(Accounts)]
 pub struct InitializeOutcomeMints<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"market".as_ref(), market.authority.key().as_ref(), &market.strike.to_le_bytes(), &market.expiry.to_le_bytes()],
+        bump
+    )]
     pub market: Account<'info, Market>,
 
     #[account(mut)]
@@ -404,11 +326,17 @@ pub struct InitializeOutcomeMints<'info> {
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
+
+
 }
 
 #[derive(Accounts)]
 pub struct InitializeTreasuryTokenAccounts<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"market".as_ref(), market.authority.key().as_ref(), &market.strike.to_le_bytes(), &market.expiry.to_le_bytes()],
+        bump
+    )]
     pub market: Account<'info, Market>,
 
     #[account(mut)]
@@ -451,7 +379,11 @@ pub struct InitializeTreasuryTokenAccounts<'info> {
 
 #[derive(Accounts)]
 pub struct MintOutcomeTokens<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"market".as_ref(), market.authority.key().as_ref(), &market.strike.to_le_bytes(), &market.expiry.to_le_bytes()],
+        bump
+    )]
     pub market: Account<'info, Market>,
 
     #[account(mut)]
