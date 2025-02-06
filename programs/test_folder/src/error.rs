@@ -33,5 +33,9 @@ pub enum ErrorCode {
     InvalidTreasuryTokenAccount,
     #[msg("Invalid mint account")]
     InvalidMintAccount,
-        
+    #[msg("Overflow")]
+    Overflow,
+    #[msg("Insufficient tokens")]
+    InsufficientTokens,
+       
 }

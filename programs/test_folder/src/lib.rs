@@ -66,18 +66,8 @@ pub mod binary_options {
     pub fn fetch_btc_price(ctx: Context<FetchCoinPrice>) -> Result<f64> {
         instructions::fetch_btc_price(&ctx.accounts.price_update)
     }
-    pub fn redeem(ctx: Context<Redeem>, amount: u64)->Result<()>{
-        instructions::redeem(ctx, amount)
+    pub fn redeem(ctx: Context<Redeem>)->Result<()>{
+        instructions::redeem(ctx)
     }
 
 }
-
-
-
-
-
-
-
-
-
-

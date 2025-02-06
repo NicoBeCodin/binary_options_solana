@@ -9,7 +9,6 @@ use crate::error::ErrorCode;
 use anchor_spl::token::{
     self,
     MintTo,
-    spl_token,
     Burn,
     Transfer,
 };
@@ -22,15 +21,13 @@ use mpl_token_metadata::types::DataV2;
 
 
 pub fn resolve_market(ctx: Context<ResolveMarket>) -> Result<()> {
-    msg!("Resolving market...");
     let market = &mut ctx.accounts.market;
-
+    
     // Ensure the market has not already been resolved
     if market.resolved {
         msg!("Market is already resolved.");
         return Err(ErrorCode::MarketAlreadyResolved.into());
     }
-
     // Ensure the market has expired
     let current_time = Clock::get()?.unix_timestamp;
     if current_time < market.expiry {
@@ -41,6 +38,8 @@ pub fn resolve_market(ctx: Context<ResolveMarket>) -> Result<()> {
         );
         return Err(ErrorCode::MarketNotExpired.into());
     }
+    msg!("Resolving market...");
+    msg!("Strike price is {}", market.strike);
 
     // Fetch price for the associated asset
     msg!("Fetching price for asset: {}", market.asset);
@@ -53,9 +52,7 @@ pub fn resolve_market(ctx: Context<ResolveMarket>) -> Result<()> {
             return Err(ErrorCode::InvalidAsset.into());
         }
     };
-
     msg!("Fetched price: {}", price);
-
     // Determine the outcome based on the strike price
     if price >= (market.strike as f64) {
         market.outcome = Some(1); // "Yes"
@@ -73,12 +70,12 @@ pub fn resolve_market(ctx: Context<ResolveMarket>) -> Result<()> {
 }
 
 const ADMIN_KEY: &str = "EJZQiTeikeg8zgU7YgRfwZCxc9GdhTsYR3fQrXv3uK9V";
+const LAMPORTS_PER_TOKEN: u64 = 100_000;
+
 
 pub fn lock_funds(ctx: Context<LockFunds>, amount: u64) -> Result<()> {
-    let lamports_per_token_pair = 100_000;
-    let lamports_to_lock = amount * lamports_per_token_pair;
-
-    let market_key = ctx.accounts.market.key();
+    
+    let lamports_to_lock = amount * LAMPORTS_PER_TOKEN;
     let market_seeds = &[
         b"market",
         ctx.accounts.market.authority.as_ref(),
@@ -137,36 +134,87 @@ pub fn lock_funds(ctx: Context<LockFunds>, amount: u64) -> Result<()> {
 }
 
 
-pub fn redeem(ctx: Context<Redeem>, amount: u64) -> Result<()> {
-    let market = &ctx.accounts.market;
+pub fn redeem(ctx: Context<Redeem>) -> Result<()> {
+    let market = &mut ctx.accounts.market;
     let user = &ctx.accounts.user;
-    
+    let token_program = &ctx.accounts.token_program;
+
+    // ✅ Ensure the market has been resolved
     require!(market.resolved, ErrorCode::MarketNotResolved);
 
-    let (token_to_burn, mint_to_burn) = match market.outcome {
-        Some(1) => (&ctx.accounts.user_yes_token_account, &ctx.accounts.yes_mint),
-        Some(2) => (&ctx.accounts.user_no_token_account, &ctx.accounts.no_mint),
-        _ => {
-            return Err(ErrorCode::InvalidMarketOutcome.into());
+    // ✅ Determine which token should be burned and redeemed
+    let (user_token_account, treasury_token_account, mint) = match market.outcome {
+        Some(1) => {
+            msg!("✅ Market outcome is YES. Burning all YES tokens.");
+            (
+                &ctx.accounts.user_yes_token_account,
+                &ctx.accounts.treasury_yes_token_account,
+                &ctx.accounts.yes_mint,
+            )
         }
+        Some(2) => {
+            msg!("✅ Market outcome is NO. Burning all NO tokens.");
+            (
+                &ctx.accounts.user_no_token_account,
+                &ctx.accounts.treasury_no_token_account,
+                &ctx.accounts.no_mint,
+            )
+        }
+        _ => return Err(ErrorCode::MarketNotResolved.into()),
     };
 
-    require!(token_to_burn.mint == mint_to_burn.key(), ErrorCode::InvalidTokenMint);
+    // ✅ Fetch the user's token balance
+    let user_token_balance = user_token_account.amount;
+    require!(user_token_balance > 0, ErrorCode::InsufficientTokens);
 
-    // Burn user's tokens
-    let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), Burn {
-        mint: mint_to_burn.to_account_info(),
-        from: token_to_burn.to_account_info(),
+    let total_lamports = user_token_balance.checked_mul(LAMPORTS_PER_TOKEN)
+        .ok_or(ErrorCode::Overflow)?;
+
+    // ✅ Burn all user's tokens
+    let cpi_accounts = Burn {
+        mint: mint.to_account_info(),
+        from: user_token_account.to_account_info(),
         authority: user.to_account_info(),
-    });
-    token::burn(cpi_ctx, amount)?;
-    
-    let lamports_to_transfer = amount * 100_000;
-    
-    **ctx.accounts.treasury.to_account_info().try_borrow_mut_lamports()? -= lamports_to_transfer;
-    **user.to_account_info().try_borrow_mut_lamports()? += lamports_to_transfer;
-    
-    msg!("Redeemed {} tokens, transferred {} lamports to user", amount, lamports_to_transfer);
+    };
+    let cpi_ctx = CpiContext::new(token_program.to_account_info(), cpi_accounts);
+    token::burn(cpi_ctx, user_token_balance)?;
+
+    msg!(
+        "✅ Burned {} tokens for user. Transferring {} lamports...",
+        user_token_balance,
+        total_lamports
+    );
+
+    // ✅ Transfer lamports from Market PDA to the user
+    let market_seeds = &[
+        b"market",
+        market.authority.as_ref(),
+        &market.strike.to_le_bytes(),
+        &market.expiry.to_le_bytes(),
+        &[ctx.bumps.market],
+    ];
+    let signer = &[&market_seeds[..]];
+
+    invoke_signed(
+        &solana_program::system_instruction::transfer(
+            &market.key(),
+            &user.key(),
+            total_lamports,
+        ),
+        &[
+            market.to_account_info(),
+            user.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+        ],
+        signer, // ✅ Market PDA signs the transfer
+    )?;
+
+    msg!(
+        "✅ Successfully redeemed {} tokens and transferred {} lamports to user",
+        user_token_balance,
+        total_lamports
+    );
+
     Ok(())
 }
 
@@ -359,8 +407,10 @@ pub fn initialize_outcome_mints(ctx: Context<InitializeOutcomeMints>) -> Result<
     Ok(())
 }
 
+
+//This isn't used currently
 #[inline(never)]
-pub fn initialize_treasury_token_accounts(ctx: Context<InitializeTreasuryTokenAccounts>) -> Result<()> {
+pub fn initialize_treasury_token_accounts(_ctx: Context<InitializeTreasuryTokenAccounts>) -> Result<()> {
     
     msg!("✅ Treasury Token Accounts Initialized!");
     Ok(())

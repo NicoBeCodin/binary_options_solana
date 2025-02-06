@@ -1,10 +1,10 @@
 use anchor_lang::{prelude::*, solana_program};
-use anchor_spl::token::accessor::authority;
+
 // use pyth_sdk_solana::{state::PriceAccount, PriceFeed}
 use solana_program::system_program;
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 
-use anchor_spl::token::{self, Mint, Token, TokenAccount, MintTo};
+use anchor_spl::token::{Mint, Token, TokenAccount};
 use anchor_spl::associated_token::AssociatedToken;
 
 
@@ -52,7 +52,7 @@ impl Market {
         // resolved
         1 +
         // outcome: Option<u8> => 1 byte
-        1;
+        2;
 
 }
 
@@ -89,28 +89,46 @@ pub struct FetchCoinPrice<'info> {
     ///CHECK = The Pyth price account
     pub price_update: Account<'info, PriceUpdateV2>,
 }
-
 #[derive(Accounts)]
 pub struct Redeem<'info> {
-    #[account(mut)]
-    pub market: Account<'info, Market>,
-
     #[account(mut)]
     pub user: Signer<'info>,
 
     #[account(
         mut,
-        seeds = [b"treasury".as_ref(), authority.key().as_ref()], // Global treasury
+        seeds = [b"market", market.authority.as_ref(), &market.strike.to_le_bytes(), &market.expiry.to_le_bytes()],
         bump
     )]
-    ///CHECK: Global Treasury PDA
-    pub treasury: AccountInfo<'info>,
+    pub market: Box<Account<'info, Market>>, // ✅ Market PDA holds the locked lamports
 
-    #[account(mut)]
-    ///CHECK : The authority that created the treasury
-    pub authority: AccountInfo<'info>,
+    #[account(
+        mut,
+        seeds = [b"yes_mint", market.key().as_ref()],
+        bump
+    )]
+    pub yes_mint: Box<Account<'info, Mint>>,
 
-    // YES Token Account Validation
+    #[account(
+        mut,
+        seeds = [b"no_mint", market.key().as_ref()],
+        bump
+    )]
+    pub no_mint: Box<Account<'info, Mint>>,
+
+    #[account(
+        mut,
+        associated_token::mint = yes_mint,
+        associated_token::authority = market,
+    )]
+    pub treasury_yes_token_account: Box<Account<'info, TokenAccount>>,
+
+    #[account(
+        mut,
+        associated_token::mint = no_mint,
+        associated_token::authority = market,
+    )]
+    pub treasury_no_token_account: Box<Account<'info, TokenAccount>>,
+
     #[account(
         mut,
         associated_token::mint = yes_mint,
@@ -118,32 +136,12 @@ pub struct Redeem<'info> {
     )]
     pub user_yes_token_account: Account<'info, TokenAccount>,
 
-    // NO Token Account Validation
     #[account(
         mut,
         associated_token::mint = no_mint,
         associated_token::authority = user,
     )]
     pub user_no_token_account: Account<'info, TokenAccount>,
-
-
-    
-    // ✅ YES Mint tied to the Market PDA
-    #[account(
-        mut,
-        seeds = [b"yes_mint".as_ref(), market.key().as_ref()],
-        bump
-    )]
-    pub yes_mint: Account<'info, Mint>,
-
-    // ✅ NO Mint tied to the Market PDA
-    #[account(
-        mut,
-        seeds = [b"no_mint".as_ref(), market.key().as_ref()],
-        bump
-    )]
-    pub no_mint: Account<'info, Mint>,
-
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
