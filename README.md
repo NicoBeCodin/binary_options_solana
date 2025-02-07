@@ -1,7 +1,6 @@
 ## TODO
- - Currently no safety
-    - No safeguarding from creating a lot of treasuries
-    - Only one treasury
+ - Currently no safety check
  - Add token metadata
- - Implement a client
  - Implement a frontend
+ - Use as oracle a dex pool (raydium for example)
+ 

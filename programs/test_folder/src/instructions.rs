@@ -1,28 +1,23 @@
-
-
-use anchor_lang::{ prelude::*, solana_program::program::invoke_signed, solana_program::system_instruction };
+use anchor_lang::{
+    prelude::*,
+    solana_program::program::invoke_signed,
+    solana_program::system_instruction,
+    solana_program::system_instruction::withdraw_nonce_account,
+};
 // use SolanaPriceAccount::account_to_feed;
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use pyth_solana_receiver_sdk::price_update::get_feed_id_from_hex;
 use crate::state::*;
 use crate::error::ErrorCode;
-use anchor_spl::token::{
-    self,
-    MintTo,
-    Burn,
-    Transfer,
-};
+use anchor_spl::token::{ self, MintTo, Burn, Transfer };
 
 use mpl_token_metadata::programs::MPL_TOKEN_METADATA_ID;
 use mpl_token_metadata::instructions::CreateMetadataAccountV3;
 use mpl_token_metadata::types::DataV2;
 
-
-
-
 pub fn resolve_market(ctx: Context<ResolveMarket>) -> Result<()> {
     let market = &mut ctx.accounts.market;
-    
+
     // Ensure the market has not already been resolved
     if market.resolved {
         msg!("Market is already resolved.");
@@ -72,9 +67,7 @@ pub fn resolve_market(ctx: Context<ResolveMarket>) -> Result<()> {
 const ADMIN_KEY: &str = "EJZQiTeikeg8zgU7YgRfwZCxc9GdhTsYR3fQrXv3uK9V";
 const LAMPORTS_PER_TOKEN: u64 = 100_000;
 
-
 pub fn lock_funds(ctx: Context<LockFunds>, amount: u64) -> Result<()> {
-    
     let lamports_to_lock = amount * LAMPORTS_PER_TOKEN;
     let market_seeds = &[
         b"market",
@@ -90,14 +83,14 @@ pub fn lock_funds(ctx: Context<LockFunds>, amount: u64) -> Result<()> {
         &system_instruction::transfer(
             &ctx.accounts.user.key(),
             &ctx.accounts.market.key(),
-            lamports_to_lock,
+            lamports_to_lock
         ),
         &[
             ctx.accounts.user.to_account_info(),
             ctx.accounts.market.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
         ],
-        signer_seeds, // ✅ Sign the transaction with the market PDA seeds
+        signer_seeds // ✅ Sign the transaction with the market PDA seeds
     )?;
 
     msg!(
@@ -114,7 +107,7 @@ pub fn lock_funds(ctx: Context<LockFunds>, amount: u64) -> Result<()> {
             to: ctx.accounts.user_yes_token_account.to_account_info(),
             authority: ctx.accounts.market.to_account_info(),
         },
-        signer_seeds,
+        signer_seeds
     );
     token::transfer(yes_transfer_ctx, amount)?;
 
@@ -126,16 +119,16 @@ pub fn lock_funds(ctx: Context<LockFunds>, amount: u64) -> Result<()> {
             to: ctx.accounts.user_no_token_account.to_account_info(),
             authority: ctx.accounts.market.to_account_info(),
         },
-        signer_seeds,
+        signer_seeds
     );
     token::transfer(no_transfer_ctx, amount)?;
 
     Ok(())
 }
 
-
 pub fn redeem(ctx: Context<Redeem>) -> Result<()> {
     let market = &mut ctx.accounts.market;
+    // let market_authority = &mut ctx.accounts.market_authority;
     let user = &ctx.accounts.user;
     let token_program = &ctx.accounts.token_program;
 
@@ -160,14 +153,17 @@ pub fn redeem(ctx: Context<Redeem>) -> Result<()> {
                 &ctx.accounts.no_mint,
             )
         }
-        _ => return Err(ErrorCode::MarketNotResolved.into()),
+        _ => {
+            return Err(ErrorCode::MarketNotResolved.into());
+        }
     };
 
     // ✅ Fetch the user's token balance
     let user_token_balance = user_token_account.amount;
     require!(user_token_balance > 0, ErrorCode::InsufficientTokens);
 
-    let total_lamports = user_token_balance.checked_mul(LAMPORTS_PER_TOKEN)
+    let total_lamports = user_token_balance
+        .checked_mul(LAMPORTS_PER_TOKEN)
         .ok_or(ErrorCode::Overflow)?;
 
     // ✅ Burn all user's tokens
@@ -193,22 +189,14 @@ pub fn redeem(ctx: Context<Redeem>) -> Result<()> {
         &market.expiry.to_le_bytes(),
         &[ctx.bumps.market],
     ];
+
+
     let signer = &[&market_seeds[..]];
-
-    invoke_signed(
-        &solana_program::system_instruction::transfer(
-            &market.key(),
-            &user.key(),
-            total_lamports,
-        ),
-        &[
-            market.to_account_info(),
-            user.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-        ],
-        signer, // ✅ Market PDA signs the transfer
-    )?;
-
+    **ctx.accounts.market.to_account_info().try_borrow_mut_lamports()? -= total_lamports;
+    **ctx.accounts.user.try_borrow_mut_lamports()? += total_lamports;
+    
+    
+    
     msg!(
         "✅ Successfully redeemed {} tokens and transferred {} lamports to user",
         user_token_balance,
@@ -217,6 +205,21 @@ pub fn redeem(ctx: Context<Redeem>) -> Result<()> {
 
     Ok(())
 }
+// invoke_signed(
+//     &solana_program::system_instruction::withdraw_nonce_account(
+//         &market.key(),
+//         &market.authority,
+//         &user.key(),
+//         total_lamports,
+//     ),
+//     &[
+//         market.to_account_info().clone(),
+//         market_authority.to_account_info().clone(),
+//         ctx.accounts.system_program.to_account_info(),
+//         user.to_account_info().clone(),
+//     ],
+//     signer, // ✅ Market PDA signs the transfer
+// )?;
 
 pub const MAXIMUM_AGE: u64 = 3600; // 1 hour
 pub const FEED_ID: &str = "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
@@ -257,12 +260,12 @@ pub fn fetch_btc_price(price_account: &Account<PriceUpdateV2>) -> Result<f64> {
         STALENESS_THRESHOLD,
         &feed_id
     )?;
-    
+
     let final_price = (price.price as f64) * (10f64).powi(price.exponent as i32);
-    
+
     msg!("The price is ({} ± {}) * 10^{}", price.price, price.conf, price.exponent);
     msg!("The price is: {}", final_price);
-    
+
     Ok(final_price)
 }
 
@@ -295,7 +298,6 @@ pub fn fetch_eth_price(price_account: &Account<PriceUpdateV2>) -> Result<f64> {
     msg!("ETH price: {}", final_price);
     Ok(final_price)
 }
-
 
 // fn create_token_metadata<'info>(
 //     token_metadata_program: &Program<'info, mpl_token_metadata_id>,
@@ -368,7 +370,6 @@ pub fn fetch_eth_price(price_account: &Account<PriceUpdateV2>) -> Result<f64> {
 //     Ok(())
 // }
 
-
 pub fn initialize_treasury(ctx: Context<InitializeTreasury>) -> Result<()> {
     if ctx.accounts.authority.key.to_string() != ADMIN_KEY {
         return Err(ErrorCode::Unauthorized.into());
@@ -407,11 +408,11 @@ pub fn initialize_outcome_mints(ctx: Context<InitializeOutcomeMints>) -> Result<
     Ok(())
 }
 
-
 //This isn't used currently
 #[inline(never)]
-pub fn initialize_treasury_token_accounts(_ctx: Context<InitializeTreasuryTokenAccounts>) -> Result<()> {
-    
+pub fn initialize_treasury_token_accounts(
+    _ctx: Context<InitializeTreasuryTokenAccounts>
+) -> Result<()> {
     msg!("✅ Treasury Token Accounts Initialized!");
     Ok(())
 }
@@ -419,23 +420,21 @@ pub fn initialize_treasury_token_accounts(_ctx: Context<InitializeTreasuryTokenA
 #[inline(never)]
 pub fn mint_outcome_tokens(ctx: Context<MintOutcomeTokens>) -> Result<()> {
     let token_program = &ctx.accounts.token_program;
-    
-    if ctx.accounts.yes_mint.mint_authority != Some(ctx.accounts.market.key()).into(){
+
+    if ctx.accounts.yes_mint.mint_authority != Some(ctx.accounts.market.key()).into() {
         return Err(ErrorCode::InvalidMintAccount.into());
     }
 
-
     let market_key = &ctx.accounts.market.authority.key();
-    
 
     let market_seeds = &[
         b"market",
-     market_key.as_ref(),
-     &ctx.accounts.market.strike.to_le_bytes(),
-     &ctx.accounts.market.expiry.to_le_bytes(),
-     &[ctx.bumps.market] 
-      ];
-    
+        market_key.as_ref(),
+        &ctx.accounts.market.strike.to_le_bytes(),
+        &ctx.accounts.market.expiry.to_le_bytes(),
+        &[ctx.bumps.market],
+    ];
+
     // ✅ Mint 500,000 YES Tokens
     // let binding: [&[&[u8]];1] = [market_seeds];
     let signer = &[&market_seeds[..]];
@@ -459,7 +458,7 @@ pub fn mint_outcome_tokens(ctx: Context<MintOutcomeTokens>) -> Result<()> {
             to: ctx.accounts.treasury_no_token_account.to_account_info(),
             authority: ctx.accounts.market.to_account_info(),
         },
-        signer,
+        signer
     );
     token::mint_to(no_mint_ctx, 500_000)?;
 
