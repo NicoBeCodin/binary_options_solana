@@ -9,7 +9,7 @@ use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use pyth_solana_receiver_sdk::price_update::get_feed_id_from_hex;
 use crate::state::*;
 use crate::error::ErrorCode;
-use anchor_spl::token::{ self, MintTo, Burn, Transfer };
+use anchor_spl::token::{ self, MintTo, Burn, Transfer, CloseAccount };
 
 use mpl_token_metadata::programs::MPL_TOKEN_METADATA_ID;
 use mpl_token_metadata::instructions::CreateMetadataAccountV3;
@@ -189,37 +189,28 @@ pub fn redeem(ctx: Context<Redeem>) -> Result<()> {
         &market.expiry.to_le_bytes(),
         &[ctx.bumps.market],
     ];
-
-
     let signer = &[&market_seeds[..]];
     **ctx.accounts.market.to_account_info().try_borrow_mut_lamports()? -= total_lamports;
     **ctx.accounts.user.try_borrow_mut_lamports()? += total_lamports;
-    
-    
-    
     msg!(
         "✅ Successfully redeemed {} tokens and transferred {} lamports to user",
         user_token_balance,
         total_lamports
     );
 
+    // Close the user's token account to reclaim rent
+    let close_cpi_accounts = CloseAccount {
+        account: user_token_account.to_account_info(),
+        destination: user.to_account_info(),
+        authority: user.to_account_info(),
+    };
+    let close_cpi_ctx = CpiContext::new(token_program.to_account_info(), close_cpi_accounts);
+    token::close_account(close_cpi_ctx)?;
+
+    msg!("✅ Closed user's token account to reclaim rent.");
+
     Ok(())
 }
-// invoke_signed(
-//     &solana_program::system_instruction::withdraw_nonce_account(
-//         &market.key(),
-//         &market.authority,
-//         &user.key(),
-//         total_lamports,
-//     ),
-//     &[
-//         market.to_account_info().clone(),
-//         market_authority.to_account_info().clone(),
-//         ctx.accounts.system_program.to_account_info(),
-//         user.to_account_info().clone(),
-//     ],
-//     signer, // ✅ Market PDA signs the transfer
-// )?;
 
 pub const MAXIMUM_AGE: u64 = 3600; // 1 hour
 pub const FEED_ID: &str = "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
