@@ -89,7 +89,6 @@ pub struct FetchCoinPrice<'info> {
     ///CHECK = The Pyth price account
     pub price_update: Account<'info, PriceUpdateV2>,
 }
-
 #[derive(Accounts)]
 pub struct Redeem<'info> {
     #[account(mut)]

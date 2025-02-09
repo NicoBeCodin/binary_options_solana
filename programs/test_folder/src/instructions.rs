@@ -2,7 +2,6 @@ use anchor_lang::{
     prelude::*,
     solana_program::program::invoke_signed,
     solana_program::system_instruction,
-    solana_program::system_instruction::withdraw_nonce_account,
 };
 // use SolanaPriceAccount::account_to_feed;
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
@@ -14,6 +13,8 @@ use anchor_spl::token::{ self, MintTo, Burn, Transfer, CloseAccount };
 use mpl_token_metadata::programs::MPL_TOKEN_METADATA_ID;
 use mpl_token_metadata::instructions::CreateMetadataAccountV3;
 use mpl_token_metadata::types::DataV2;
+use mpl_token_metadata::ID as METAPLEX_PROGRAM_ID;
+
 
 pub fn resolve_market(ctx: Context<ResolveMarket>) -> Result<()> {
     let market = &mut ctx.accounts.market;
@@ -392,8 +393,9 @@ pub fn initialize_market(
 #[inline(never)]
 pub fn initialize_outcome_mints(ctx: Context<InitializeOutcomeMints>) -> Result<()> {
     let market = &ctx.accounts.market;
-
     require!(market.resolved == false, ErrorCode::MarketAlreadyResolved);
+
+    //Normally can't mint is deterministic so they're can't be infinitely minted ?
 
     msg!("✅ YES and NO Mints Created!");
     Ok(())
