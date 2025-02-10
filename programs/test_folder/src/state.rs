@@ -1,12 +1,17 @@
-use anchor_lang::{prelude::*, solana_program};
+use anchor_lang::prelude::*;
 
-// use pyth_sdk_solana::{state::PriceAccount, PriceFeed}
+use solana_program::{pubkey, pubkey::Pubkey};
 use solana_program::system_program;
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
+use anchor_spl::{
+    associated_token::AssociatedToken,
+    metadata::{create_metadata_accounts_v3, CreateMetadataAccountsV3, MasterEditionAccount, Metadata},
+    token::{burn, mint_to, Burn, Mint, MintTo, Token, TokenAccount},
+};
 
-use anchor_spl::token::{Mint, Token, TokenAccount};
-use anchor_spl::associated_token::AssociatedToken;
-
+use mpl_token_metadata::accounts::MasterEdition;
+use mpl_token_metadata::{types::DataV2};
+use mpl_token_metadata::ID as METAPLEX_PROGRAM_ID;
 
 /// The primary Market account structure.
 /// This stores all relevant metadata for the binary option market.
@@ -285,8 +290,76 @@ pub struct InitializeOutcomeMints<'info> {
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
+}
 
+const METADATA_PROGRAM_ID: Pubkey=  pubkey!(Pubkey::new_from_array([11, 112, 101, 177, 227, 209, 124, 69, 56, 157, 82, 127, 107, 4, 195, 205, 88, 184, 108, 115, 26, 160, 253, 181, 73, 182, 209, 188, 3, 248, 41, 70]));
 
+#[derive(Accounts)]
+pub struct CreateMint<'info> {
+    #[account(
+        mut,
+        seeds = [b"market".as_ref(), market.authority.key().as_ref(), &market.strike.to_le_bytes(), &market.expiry.to_le_bytes()],
+        bump
+    )]
+    pub market: Account<'info, Market>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+ 
+    // The PDA is both the address of the mint account and the mint authority
+    #[account(
+        init,
+        seeds = [b"yes_mint", market.key().as_ref()],
+        bump,
+        payer = authority,
+        mint::decimals = 0,
+        mint::authority = yes_mint,
+    )]
+    pub yes_mint: Account<'info, Mint>,
+ 
+    ///CHECK: Using "address" constraint to validate metadata account address
+    #[account(mut,
+        address = Pubkey::find_program_address(
+            &[b"metadata".as_ref(), METAPLEX_PROGRAM_ID.as_ref(), yes_mint.key().as_ref()],
+            &METADATA_PROGRAM_ID,
+        ).0)]
+    pub metadata_account: UncheckedAccount<'info>,
+ 
+    pub token_program: Program<'info, Token>,
+    pub token_metadata_program: Program<'info, Metadata>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct MintMetadataTokens<'info> {
+    #[account(
+        mut,
+        seeds = [b"market".as_ref(), market.authority.key().as_ref(), &market.strike.to_le_bytes(), &market.expiry.to_le_bytes()],
+        bump
+    )]
+    pub market: Account<'info, Market>,
+
+    #[account(
+        mut,
+        seeds = [b"yes_mint", market.key().as_ref()],
+        bump,
+        mint::authority = yes_mint,
+    )]
+    pub yes_mint: Account<'info, Mint>,
+    #[account(
+        init_if_needed,
+        payer = payer,
+        associated_token::mint = yes_mint,
+        associated_token::authority = market,
+    )]
+    pub treasury_yes_token_account: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
@@ -375,6 +448,7 @@ pub struct MintOutcomeTokens<'info> {
         associated_token::authority = market,
     )]
     pub treasury_no_token_account: Account<'info, TokenAccount>,
+
 
     pub token_program: Program<'info, Token>,
 }

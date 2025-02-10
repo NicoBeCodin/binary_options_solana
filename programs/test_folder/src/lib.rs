@@ -70,4 +70,11 @@ pub mod binary_options {
         instructions::redeem(ctx)
     }
 
+    pub fn mint_metadata_tokens(ctx: Context<MintMetadataTokens>)->Result<()>{
+        instructions::mint_metadata_tokens(ctx)
+    }
+    pub fn create_mint(ctx: Context<CreateMint>)->Result<()>{
+       instructions::create_mint(ctx) 
+    }
+
 }

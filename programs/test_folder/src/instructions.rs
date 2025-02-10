@@ -2,19 +2,26 @@ use anchor_lang::{
     prelude::*,
     solana_program::program::invoke_signed,
     solana_program::system_instruction,
+    solana_program::pubkey::Pubkey,
 };
+
+use anchor_spl::metadata::mpl_token_metadata::types::DataV2;
+use anchor_spl::token_2022::spl_token_2022::extension::token_metadata;
+use anchor_spl::token_2022::spl_token_2022::solana_zk_token_sdk::zk_token_proof_program;
 // use SolanaPriceAccount::account_to_feed;
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use pyth_solana_receiver_sdk::price_update::get_feed_id_from_hex;
 use crate::state::*;
 use crate::error::ErrorCode;
-use anchor_spl::token::{ self, MintTo, Burn, Transfer, CloseAccount };
+use anchor_spl::{
+    associated_token::AssociatedToken,
+    metadata::{ create_metadata_accounts_v3, Metadata, CreateMetadataAccountsV3 },
+    token::{ self, MintTo, Burn, Transfer, CloseAccount },
+};
+use mpl_token_metadata::types::DataV2 as MetaDataV2;
+use mpl_token_metadata::accounts::MasterEdition;
 
-use mpl_token_metadata::programs::MPL_TOKEN_METADATA_ID;
-use mpl_token_metadata::instructions::CreateMetadataAccountV3;
-use mpl_token_metadata::types::DataV2;
 use mpl_token_metadata::ID as METAPLEX_PROGRAM_ID;
-
 
 pub fn resolve_market(ctx: Context<ResolveMarket>) -> Result<()> {
     let market = &mut ctx.accounts.market;
@@ -291,77 +298,6 @@ pub fn fetch_eth_price(price_account: &Account<PriceUpdateV2>) -> Result<f64> {
     Ok(final_price)
 }
 
-// fn create_token_metadata<'info>(
-//     token_metadata_program: &Program<'info, mpl_token_metadata_id>,
-//     mint: &Account<'info, Mint>,
-//     mint_authority: &Account<'info, Market>,
-//     payer: &Signer<'info>,
-//     name: String,
-//     symbol: String,
-//     uri: String,
-//     ctx: Context<'_, '_, '_, 'info, InitializeOutcomeMints<'info>>,
-// ) -> Result<()> {
-//     let _ = token_metadata_program;
-//     // Derive the metadata PDA
-//     let metadata_seeds = &[
-//         b"metadata",
-//         mpl_token_metadata::ID.as_ref(),
-//         mint.key().as_ref(),
-//     ];
-//     let (metadata_account, _bump) =
-//         Pubkey::find_program_address(metadata_seeds, &mpl_token_metadata::ID);
-
-//     // Define the metadata data structure
-//     let data = DataV2 {
-//         name,
-//         symbol,
-//         uri,
-//         seller_fee_basis_points: 0, // No seller fee
-//         creators: None,
-//         collection: None,
-//         uses: None,
-//     };
-
-//     // Create the instruction
-//     let ix = create_metadata_accounts_v3(
-//         mpl_token_metadata::ID,
-//         metadata_account,
-//         mint.key(),
-//         mint_authority.key(),
-//         payer.key(),
-//         mint_authority.key(),
-//         data,
-//         true,  // Update authority is signer
-//         true,  // Is mutable
-//         None,
-//         None,
-//         None,
-//     );
-
-//     // Invoke the instruction
-//     invoke_signed(
-//         &ix,
-//         &[
-//             ctx.accounts.token_metadata_program.to_account_info(),
-//             ctx.accounts.token_program.to_account_info(),
-//             ctx.accounts.system_program.to_account_info(),
-//             ctx.accounts.rent.to_account_info(),
-//             mint.to_account_info(),
-//             metadata_account.to_account_info(),
-//             mint_authority.to_account_info(),
-//             payer.to_account_info(),
-//         ],
-//         &[&[
-//             b"metadata",
-//             mpl_token_metadata::ID.as_ref(),
-//             mint.key().as_ref(),
-//             &[_bump],
-//         ]],
-//     )?;
-
-//     Ok(())
-// }
-
 pub fn initialize_treasury(ctx: Context<InitializeTreasury>) -> Result<()> {
     if ctx.accounts.authority.key.to_string() != ADMIN_KEY {
         return Err(ErrorCode::Unauthorized.into());
@@ -427,10 +363,10 @@ pub fn mint_outcome_tokens(ctx: Context<MintOutcomeTokens>) -> Result<()> {
         &ctx.accounts.market.expiry.to_le_bytes(),
         &[ctx.bumps.market],
     ];
+    let signer = &[&market_seeds[..]];
 
     // ✅ Mint 500,000 YES Tokens
     // let binding: [&[&[u8]];1] = [market_seeds];
-    let signer = &[&market_seeds[..]];
     let yes_mint_ctx = CpiContext::new_with_signer(
         token_program.to_account_info(),
         MintTo {
@@ -456,5 +392,85 @@ pub fn mint_outcome_tokens(ctx: Context<MintOutcomeTokens>) -> Result<()> {
     token::mint_to(no_mint_ctx, 500_000)?;
 
     msg!("✅ 500,000 YES and NO tokens successfully minted!");
+    Ok(())
+}
+
+pub fn create_mint(
+    ctx: Context<CreateMint>,
+) -> Result<()> {
+    
+    let market_key = &ctx.accounts.market.key();
+    let bump=&[ ctx.bumps.yes_mint];
+    let seeds = &["yes_mint".as_bytes(), market_key.as_ref(), bump];
+    let signer:&[&[&[u8]]] = &[&seeds[..]];
+
+    let cpi_ctx = CpiContext::new_with_signer(
+        ctx.accounts.token_metadata_program.to_account_info(),
+        CreateMetadataAccountsV3 {
+            metadata: ctx.accounts.metadata_account.to_account_info(), // the metadata account being created
+            mint: ctx.accounts.yes_mint.to_account_info(), // the mint account of the metadata account
+            mint_authority: ctx.accounts.yes_mint.to_account_info(), // the mint authority of the mint account
+            update_authority: ctx.accounts.yes_mint.to_account_info(), // the update authority of the metadata account
+            payer: ctx.accounts.authority.to_account_info(), // the payer for creating the metadata account
+            system_program: ctx.accounts.system_program.to_account_info(), // the system program account
+            rent: ctx.accounts.rent.to_account_info(), // the rent sysvar account
+        },
+        signer
+    );
+
+    let market = &ctx.accounts.market;
+    let name=  format!("{} {} {} {}", market.asset, market.strike, market.expiry, market.asset);
+    let symbol = "YES".to_string();
+    let uri = "Nothing for the moment".to_string();
+    
+    create_metadata_accounts_v3(
+        cpi_ctx, // cpi context
+        DataV2 {
+            name: name,
+            symbol: symbol,
+            uri: uri,
+            seller_fee_basis_points: 0,
+            creators: None,
+            collection: None,
+            uses: None,
+        }, // token metadata
+        false, // is_mutable
+        false, // update_authority_is_signer
+        None // collection details
+    )?;
+
+    msg!("Succesfully initialized token mint");
+
+    Ok(())
+}
+
+pub fn mint_metadata_tokens(ctx: Context<MintMetadataTokens>) -> Result<()> {
+    let token_program = &ctx.accounts.token_program;
+    // let market_seeds = &[
+    //     b"market",
+    //     market_key.as_ref(),
+    //     &ctx.accounts.market.strike.to_le_bytes(),
+    //     &ctx.accounts.market.expiry.to_le_bytes(),
+    //     &[ctx.bumps.market],
+    // ];
+
+    let market_key = &ctx.accounts.market.key();
+    let bump=&[ ctx.bumps.yes_mint];
+    let seeds = &["yes_mint".as_bytes(), market_key.as_ref(), bump];
+    let signer:&[&[&[u8]]] = &[&seeds[..]];
+
+    let yes_mint_ctx = CpiContext::new_with_signer(
+        token_program.to_account_info(),
+        MintTo {
+            mint: ctx.accounts.yes_mint.to_account_info(),
+            to: ctx.accounts.treasury_yes_token_account.to_account_info(),
+            authority: ctx.accounts.yes_mint.to_account_info(),
+        },
+        signer
+    );
+    token::mint_to(yes_mint_ctx, 500_000)?;
+    msg!("Minted 500 000 yes tokens!");
+
+
     Ok(())
 }
