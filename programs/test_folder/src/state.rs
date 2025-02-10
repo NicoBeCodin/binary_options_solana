@@ -1,16 +1,21 @@
 use anchor_lang::prelude::*;
 
-use solana_program::{pubkey, pubkey::Pubkey};
+use solana_program::{ pubkey, pubkey::Pubkey };
 use solana_program::system_program;
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use anchor_spl::{
     associated_token::AssociatedToken,
-    metadata::{create_metadata_accounts_v3, CreateMetadataAccountsV3, MasterEditionAccount, Metadata},
-    token::{burn, mint_to, Burn, Mint, MintTo, Token, TokenAccount},
+    metadata::{
+        create_metadata_accounts_v3,
+        CreateMetadataAccountsV3,
+        MasterEditionAccount,
+        Metadata,
+    },
+    token::{ burn, mint_to, Burn, Mint, MintTo, Token, TokenAccount },
 };
 
 use mpl_token_metadata::accounts::MasterEdition;
-use mpl_token_metadata::{types::DataV2};
+use mpl_token_metadata::{ types::DataV2 };
 use mpl_token_metadata::ID as METAPLEX_PROGRAM_ID;
 
 /// The primary Market account structure.
@@ -45,7 +50,7 @@ pub struct Market {
 impl Market {
     /// Byte-length of the Market struct (excluding discriminator).
     /// Helps when we declare `space` in #[account(init, space = ...)]
-    pub const LEN: usize = 
+    pub const LEN: usize =
         // authority
         32 +
         // strike
@@ -58,13 +63,7 @@ impl Market {
         1 +
         // outcome: Option<u8> => 1 byte
         2;
-
 }
-
-
-
-
-
 
 #[derive(Accounts)]
 pub struct ResolveMarket<'info> {
@@ -76,16 +75,12 @@ pub struct ResolveMarket<'info> {
     pub price_account: Account<'info, PriceUpdateV2>,
 }
 
-
-
 #[derive(Accounts)]
 pub struct GetPriceFeed<'info> {
     #[account(mut)]
-    pub payer:          Signer<'info>,
-    pub price_update:   Account<'info, PriceUpdateV2>,
+    pub payer: Signer<'info>,
+    pub price_update: Account<'info, PriceUpdateV2>,
 }
-
-
 
 #[derive(Accounts)]
 pub struct FetchCoinPrice<'info> {
@@ -152,7 +147,6 @@ pub struct Redeem<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-
 #[derive(Accounts)]
 pub struct LockFunds<'info> {
     #[account(mut)]
@@ -197,7 +191,7 @@ pub struct LockFunds<'info> {
         init_if_needed,
         payer = user,
         associated_token::mint = yes_mint,
-        associated_token::authority = user,
+        associated_token::authority = user
     )]
     pub user_yes_token_account: Account<'info, TokenAccount>,
 
@@ -205,17 +199,16 @@ pub struct LockFunds<'info> {
         init_if_needed,
         payer = user,
         associated_token::mint = no_mint,
-        associated_token::authority = user,
+        associated_token::authority = user
     )]
     pub user_no_token_account: Account<'info, TokenAccount>,
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
-    
 }
 
-//ADMIN STUFF 
+//ADMIN STUFF
 
 #[derive(Accounts)]
 #[instruction(strike: u64, expiry: i64, asset: u8)]
@@ -224,7 +217,12 @@ pub struct InitializeMarket<'info> {
         init,
         payer = authority,
         space = 8 + Market::LEN,
-        seeds = [b"market".as_ref(), authority.key().as_ref(), &strike.to_le_bytes(), &expiry.to_le_bytes()],
+        seeds = [
+            b"market".as_ref(),
+            authority.key().as_ref(),
+            &strike.to_le_bytes(),
+            &expiry.to_le_bytes(),
+        ],
         bump
     )]
     pub market: Account<'info, Market>,
@@ -234,8 +232,6 @@ pub struct InitializeMarket<'info> {
 
     pub system_program: Program<'info, System>,
 }
-
-
 
 #[derive(Accounts)]
 pub struct InitializeTreasury<'info> {
@@ -253,8 +249,6 @@ pub struct InitializeTreasury<'info> {
     #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }
-
-
 
 #[derive(Accounts)]
 pub struct InitializeOutcomeMints<'info> {
@@ -292,7 +286,12 @@ pub struct InitializeOutcomeMints<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-const METADATA_PROGRAM_ID: Pubkey=  pubkey!(Pubkey::new_from_array([11, 112, 101, 177, 227, 209, 124, 69, 56, 157, 82, 127, 107, 4, 195, 205, 88, 184, 108, 115, 26, 160, 253, 181, 73, 182, 209, 188, 3, 248, 41, 70]));
+const METADATA_PROGRAM_ID: Pubkey = pubkey!(
+    Pubkey::new_from_array([
+        11, 112, 101, 177, 227, 209, 124, 69, 56, 157, 82, 127, 107, 4, 195, 205, 88, 184, 108, 115,
+        26, 160, 253, 181, 73, 182, 209, 188, 3, 248, 41, 70,
+    ])
+);
 
 #[derive(Accounts)]
 pub struct CreateMint<'info> {
@@ -302,10 +301,10 @@ pub struct CreateMint<'info> {
         bump
     )]
     pub market: Account<'info, Market>,
-    
+
     #[account(mut)]
     pub authority: Signer<'info>,
- 
+
     // The PDA is both the address of the mint account and the mint authority
     #[account(
         init,
@@ -313,18 +312,36 @@ pub struct CreateMint<'info> {
         bump,
         payer = authority,
         mint::decimals = 0,
-        mint::authority = yes_mint,
+        mint::authority = yes_mint
     )]
     pub yes_mint: Account<'info, Mint>,
- 
+
+    #[account(
+        init,
+        seeds = [b"no_mint", market.key().as_ref()],
+        bump,
+        payer = authority,
+        mint::decimals = 0,
+        mint::authority = no_mint
+    )]
+    pub no_mint: Account<'info, Mint>,
+
     ///CHECK: Using "address" constraint to validate metadata account address
     #[account(mut,
         address = Pubkey::find_program_address(
             &[b"metadata".as_ref(), METAPLEX_PROGRAM_ID.as_ref(), yes_mint.key().as_ref()],
             &METADATA_PROGRAM_ID,
         ).0)]
-    pub metadata_account: UncheckedAccount<'info>,
- 
+    pub yes_metadata_account: UncheckedAccount<'info>,
+
+    ///CHECK: Using "address" constraint to validate metadata account address
+    #[account(mut,
+            address = Pubkey::find_program_address(
+                &[b"metadata".as_ref(), METAPLEX_PROGRAM_ID.as_ref(), no_mint.key().as_ref()],
+                &METADATA_PROGRAM_ID,
+            ).0)]
+    pub no_metadata_account: UncheckedAccount<'info>,
+
     pub token_program: Program<'info, Token>,
     pub token_metadata_program: Program<'info, Metadata>,
     pub system_program: Program<'info, System>,
@@ -348,12 +365,28 @@ pub struct MintMetadataTokens<'info> {
     )]
     pub yes_mint: Account<'info, Mint>,
     #[account(
+        mut,
+        seeds = [b"no_mint", market.key().as_ref()],
+        bump,
+        mint::authority = no_mint,
+    )]
+    pub no_mint: Account<'info, Mint>,
+
+    #[account(
         init_if_needed,
         payer = payer,
         associated_token::mint = yes_mint,
-        associated_token::authority = market,
+        associated_token::authority = market
     )]
     pub treasury_yes_token_account: Account<'info, TokenAccount>,
+    #[account(
+        init_if_needed,
+        payer = payer,
+        associated_token::mint = no_mint,
+        associated_token::authority = market
+    )]
+    pub treasury_no_token_account: Account<'info, TokenAccount>,
+    
     #[account(mut)]
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -392,7 +425,7 @@ pub struct InitializeTreasuryTokenAccounts<'info> {
         init_if_needed,
         payer = authority,
         associated_token::mint = yes_mint,
-        associated_token::authority = market,
+        associated_token::authority = market
     )]
     pub treasury_yes_token_account: Account<'info, TokenAccount>,
 
@@ -400,7 +433,7 @@ pub struct InitializeTreasuryTokenAccounts<'info> {
         init_if_needed,
         payer = authority,
         associated_token::mint = no_mint,
-        associated_token::authority = market,
+        associated_token::authority = market
     )]
     pub treasury_no_token_account: Account<'info, TokenAccount>,
 
@@ -448,7 +481,6 @@ pub struct MintOutcomeTokens<'info> {
         associated_token::authority = market,
     )]
     pub treasury_no_token_account: Account<'info, TokenAccount>,
-
 
     pub token_program: Program<'info, Token>,
 }

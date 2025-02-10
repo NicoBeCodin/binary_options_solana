@@ -400,14 +400,14 @@ pub fn create_mint(
 ) -> Result<()> {
     
     let market_key = &ctx.accounts.market.key();
-    let bump=&[ ctx.bumps.yes_mint];
-    let seeds = &["yes_mint".as_bytes(), market_key.as_ref(), bump];
-    let signer:&[&[&[u8]]] = &[&seeds[..]];
+    let bump_yes=&[ ctx.bumps.yes_mint];
+    let seeds_yes = &["yes_mint".as_bytes(), market_key.as_ref(), bump_yes];
+    let signer_yes:&[&[&[u8]]] = &[&seeds_yes[..]];
 
     let cpi_ctx = CpiContext::new_with_signer(
         ctx.accounts.token_metadata_program.to_account_info(),
         CreateMetadataAccountsV3 {
-            metadata: ctx.accounts.metadata_account.to_account_info(), // the metadata account being created
+            metadata: ctx.accounts.yes_metadata_account.to_account_info(), // the metadata account being created
             mint: ctx.accounts.yes_mint.to_account_info(), // the mint account of the metadata account
             mint_authority: ctx.accounts.yes_mint.to_account_info(), // the mint authority of the mint account
             update_authority: ctx.accounts.yes_mint.to_account_info(), // the update authority of the metadata account
@@ -415,19 +415,67 @@ pub fn create_mint(
             system_program: ctx.accounts.system_program.to_account_info(), // the system program account
             rent: ctx.accounts.rent.to_account_info(), // the rent sysvar account
         },
-        signer
+        signer_yes
     );
 
+    
     let market = &ctx.accounts.market;
-    let name=  format!("{} {} {} {}", market.asset, market.strike, market.expiry, market.asset);
-    let symbol = "YES".to_string();
+    let asset_name = match market.asset {
+        1 => "BTC",
+        2=> "SOL",
+        3=>"ETH",
+        _=>"INVALID"
+    };
+    let symbol_yes = "YES".to_string();
+    let name_yes=   format!("{}_{}_EXP:{}_{}", asset_name, market.strike, market.expiry, symbol_yes);
     let uri = "Nothing for the moment".to_string();
     
     create_metadata_accounts_v3(
         cpi_ctx, // cpi context
         DataV2 {
-            name: name,
-            symbol: symbol,
+            name: name_yes,
+            symbol: symbol_yes,
+            uri: uri,
+            seller_fee_basis_points: 0,
+            creators: None,
+            collection: None,
+            uses: None,
+        }, // token metadata
+        false, // is_mutable
+        false, // update_authority_is_signer
+        None // collection details
+    )?;
+
+    //For the no token
+
+    let bump_no=&[ ctx.bumps.no_mint];
+    let seeds_no = &["no_mint".as_bytes(), market_key.as_ref(), bump_no];
+    let signer_no:&[&[&[u8]]] = &[&seeds_no[..]];
+
+    let cpi_ctx = CpiContext::new_with_signer(
+        ctx.accounts.token_metadata_program.to_account_info(),
+        CreateMetadataAccountsV3 {
+            metadata: ctx.accounts.no_metadata_account.to_account_info(), // the metadata account being created
+            mint: ctx.accounts.no_mint.to_account_info(), // the mint account of the metadata account
+            mint_authority: ctx.accounts.no_mint.to_account_info(), // the mint authority of the mint account
+            update_authority: ctx.accounts.no_mint.to_account_info(), // the update authority of the metadata account
+            payer: ctx.accounts.authority.to_account_info(), // the payer for creating the metadata account
+            system_program: ctx.accounts.system_program.to_account_info(), // the system program account
+            rent: ctx.accounts.rent.to_account_info(), // the rent sysvar account
+        },
+        signer_no,
+    );
+
+
+    let symbol_no = "NO".to_string();
+    let name_no=  format!("{}_{}_EXP:{}_{}", asset_name, market.strike, market.expiry, symbol_no);
+    let uri = "Nothing for the moment".to_string();
+    
+    create_metadata_accounts_v3(
+        cpi_ctx, // cpi context
+        DataV2 {
+            name: name_no,
+            symbol: symbol_no,
             uri: uri,
             seller_fee_basis_points: 0,
             creators: None,
@@ -440,7 +488,6 @@ pub fn create_mint(
     )?;
 
     msg!("Succesfully initialized token mint");
-
     Ok(())
 }
 
@@ -455,9 +502,9 @@ pub fn mint_metadata_tokens(ctx: Context<MintMetadataTokens>) -> Result<()> {
     // ];
 
     let market_key = &ctx.accounts.market.key();
-    let bump=&[ ctx.bumps.yes_mint];
-    let seeds = &["yes_mint".as_bytes(), market_key.as_ref(), bump];
-    let signer:&[&[&[u8]]] = &[&seeds[..]];
+    let bump_yes=&[ ctx.bumps.yes_mint];
+    let seeds_yes = &["yes_mint".as_bytes(), market_key.as_ref(), bump_yes];
+    let signer_yes:&[&[&[u8]]] = &[&seeds_yes[..]];
 
     let yes_mint_ctx = CpiContext::new_with_signer(
         token_program.to_account_info(),
@@ -466,10 +513,26 @@ pub fn mint_metadata_tokens(ctx: Context<MintMetadataTokens>) -> Result<()> {
             to: ctx.accounts.treasury_yes_token_account.to_account_info(),
             authority: ctx.accounts.yes_mint.to_account_info(),
         },
-        signer
+        signer_yes
     );
     token::mint_to(yes_mint_ctx, 500_000)?;
     msg!("Minted 500 000 yes tokens!");
+
+    let bump_no=&[ ctx.bumps.no_mint];
+    let seeds_no = &["no_mint".as_bytes(), market_key.as_ref(), bump_no];
+    let signer_no:&[&[&[u8]]] = &[&seeds_no[..]];
+
+    let no_mint_ctx = CpiContext::new_with_signer(
+        token_program.to_account_info(),
+        MintTo {
+            mint: ctx.accounts.no_mint.to_account_info(),
+            to: ctx.accounts.treasury_no_token_account.to_account_info(),
+            authority: ctx.accounts.no_mint.to_account_info(),
+        },
+        signer_no
+    );
+    token::mint_to(no_mint_ctx, 500_000)?;
+    msg!("Minted 500 000 no tokens!");
 
 
     Ok(())
