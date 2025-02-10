@@ -428,7 +428,7 @@ pub fn create_mint(
     };
     let symbol_yes = "YES".to_string();
     let name_yes=   format!("{}_{}_EXP:{}_{}", asset_name, market.strike, market.expiry, symbol_yes);
-    let uri = "Nothing for the moment".to_string();
+    let uri = "*".to_string();
     
     create_metadata_accounts_v3(
         cpi_ctx, // cpi context
@@ -469,7 +469,7 @@ pub fn create_mint(
 
     let symbol_no = "NO".to_string();
     let name_no=  format!("{}_{}_EXP:{}_{}", asset_name, market.strike, market.expiry, symbol_no);
-    let uri = "Nothing for the moment".to_string();
+    let uri = "*".to_string();
     
     create_metadata_accounts_v3(
         cpi_ctx, // cpi context
